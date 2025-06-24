@@ -1,74 +1,28 @@
-`include "synchroniser.v"
-`include "wptr_handler.v"
-`include "rptr_handler.v"
-`include "fifo_mem.v"
-
-module async_fifo #(parameter ADDR_WIDTH = 4, DATA_WIDTH = 8) (
-    input wr_clk,
-    input rd_clk,
-    input rst,
-    input wr_en,
-    input rd_en,
-    input [DATA_WIDTH-1:0] wr_data,
-    output reg [DATA_WIDTH-1:0] rd_data,
-    output full,
-    output empty
+module top_module #(
+    parameter ADDR_WIDTH = 4,
+    parameter DATA_WIDTH = 8
+)(
+    input wire wr_clk,
+    input wire rd_clk,
+    input wire rst,
+    input wire wr_en,
+    input wire rd_en,
+    input wire [DATA_WIDTH-1:0] wr_data,
+    output wire [DATA_WIDTH-1:0] rd_data,
+    output wire full,
+    output wire empty
 );
-    reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1]; // Memory array
-    reg [ADDR_WIDTH:0] wr_ptr, rd_ptr; // Write and read pointers
-    reg [ADDR_WIDTH:0] wr_ptr_gray, rd_ptr_gray; // Gray-coded pointers
-    reg [ADDR_WIDTH:0] wr_ptr_gray_sync, rd_ptr_gray_sync; // Synchronized pointers
 
-    wire [ADDR_WIDTH:0] wr_ptr_next, rd_ptr_next; // Next pointers
+    // Internal pointers and signals
+    wire [ADDR_WIDTH:0] wptr_bin, rptr_bin;
+    wire [ADDR_WIDTH:0] wptr_gray, rptr_gray;
+    wire [ADDR_WIDTH:0] wptr_gray_sync, rptr_gray_sync;
 
-    // Write pointer logic
-    always @(posedge wr_clk or posedge rst) begin
-        if (rst) begin
-            wr_ptr <= 0;
-            wr_ptr_gray <= 0;
-        end else if (wr_en && !full) begin
-            mem[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
-            wr_ptr <= wr_ptr_next;
-            wr_ptr_gray <= wr_ptr_next ^ (wr_ptr_next >> 1);
-        end
-    end
+    // Convert binary to Gray code
+    assign wptr_gray = wptr_bin ^ (wptr_bin >> 1);
+    assign rptr_gray = rptr_bin ^ (rptr_bin >> 1);
 
-    assign wr_ptr_next = wr_ptr + 1;
-
-    // Read pointer logic
-    always @(posedge rd_clk or posedge rst) begin
-        if (rst) begin
-            rd_ptr <= 0;
-            rd_ptr_gray <= 0;
-            rd_data <= 0;
-        end else if (rd_en && !empty) begin
-            rd_data <= mem[rd_ptr[ADDR_WIDTH-1:0]];
-            rd_ptr <= rd_ptr_next;
-            rd_ptr_gray <= rd_ptr_next ^ (rd_ptr_next >> 1);
-        end
-    end
-
-    assign rd_ptr_next = rd_ptr + 1;
-
-    // Synchronize write pointer to read clock domain
-    always @(posedge rd_clk or posedge rst) begin
-        if (rst) begin
-            wr_ptr_gray_sync <= 0;
-        end else begin
-            wr_ptr_gray_sync <= wr_ptr_gray;
-        end
-    end
-
-    // Synchronize read pointer to write clock domain
-    always @(posedge wr_clk or posedge rst) begin
-        if (rst) begin
-            rd_ptr_gray_sync <= 0;
-        end else begin
-            rd_ptr_gray_sync <= rd_ptr_gray;
-        end
-    end
-
-    // Convert synchronized gray-coded pointers to binary
+    // Convert Gray code back to binary for full/empty detection
     function [ADDR_WIDTH:0] gray_to_bin;
         input [ADDR_WIDTH:0] gray;
         integer i;
@@ -80,12 +34,60 @@ module async_fifo #(parameter ADDR_WIDTH = 4, DATA_WIDTH = 8) (
         end
     endfunction
 
-    wire [ADDR_WIDTH:0] wr_ptr_sync_bin = gray_to_bin(wr_ptr_gray_sync);
-    wire [ADDR_WIDTH:0] rd_ptr_sync_bin = gray_to_bin(rd_ptr_gray_sync);
+    wire [ADDR_WIDTH:0] rptr_bin_sync = gray_to_bin(rptr_gray_sync);
+    wire [ADDR_WIDTH:0] wptr_bin_sync = gray_to_bin(wptr_gray_sync);
 
     // Full and empty flags
-    assign full = (wr_ptr[ADDR_WIDTH] != rd_ptr_sync_bin[ADDR_WIDTH]) &&
-                  (wr_ptr[ADDR_WIDTH-1:0] == rd_ptr_sync_bin[ADDR_WIDTH-1:0]);
-    assign empty = (wr_ptr_gray_sync == rd_ptr_gray);
+    assign full = (wptr_gray[ADDR_WIDTH]     != rptr_gray_sync[ADDR_WIDTH]) &&
+                  (wptr_gray[ADDR_WIDTH-1:0] == rptr_gray_sync[ADDR_WIDTH-1:0]);
+
+    assign empty = (rptr_gray == wptr_gray_sync);
+
+    // ------------------------
+    // Module Instantiations
+    // ------------------------
+
+    // Write Pointer Generator
+    write_pointer #(.ADDR_WIDTH(ADDR_WIDTH)) u_write_pointer (
+        .clk  (wr_clk),
+        .rst  (rst),
+        .wr_en(wr_en & ~full),
+        .wptr (wptr_bin)
+    );
+
+    // Read Pointer Generator
+    read_pointer #(.ADDR_WIDTH(ADDR_WIDTH)) u_read_pointer (
+        .clk  (rd_clk),
+        .rst  (rst),
+        .rd_en(rd_en & ~empty),
+        .rptr (rptr_bin)
+    );
+
+    // Synchronize read pointer into write clock domain
+    synchronizer #(.ADDR_WIDTH(ADDR_WIDTH)) u_sync_rptr_to_wrclk (
+        .clk       (wr_clk),
+        .rst       (rst),
+        .async_ptr (rptr_gray),
+        .sync_ptr  (rptr_gray_sync)
+    );
+
+    // Synchronize write pointer into read clock domain
+    synchronizer #(.ADDR_WIDTH(ADDR_WIDTH)) u_sync_wptr_to_rdclk (
+        .clk       (rd_clk),
+        .rst       (rst),
+        .async_ptr (wptr_gray),
+        .sync_ptr  (wptr_gray_sync)
+    );
+
+    // Dual-Port Memory
+    fifo_memory #(.ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH)) u_fifo_memory (
+        .clk    (wr_clk), // Single-port RAM driven by write clock domain
+        .wr_en  (wr_en & ~full),
+        .rd_en  (rd_en & ~empty),
+        .wr_data(wr_data),
+        .rd_data(rd_data),
+        .waddr  (wptr_bin[ADDR_WIDTH-1:0]),
+        .raddr  (rptr_bin[ADDR_WIDTH-1:0])
+    );
 
 endmodule
