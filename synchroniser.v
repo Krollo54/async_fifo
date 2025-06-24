@@ -1,23 +1,24 @@
-module Synchroniser(clk, rst, ptr, sync_ptr);
+module synchronizer #(parameter ADDR_WIDTH = 4) (
+    input wire clk,
+    input wire rst,
+    input wire [ADDR_WIDTH:0] async_ptr,
+    output reg [ADDR_WIDTH:0] sync_ptr
+);
 
-    input clk, rst;
-    input [4:0] ptr;
-    output reg [4:0] sync_ptr;
-    reg [4:0] d;
-//    reg [5:0] d, sync_ptr; 
-   
-    always@ (posedge clk or negedge rst)
-    begin
-        if(!rst)
-        begin
-            d <= 0;
+    // Two-stage synchronizer to mitigate metastability
+    reg [ADDR_WIDTH:0] sync_stage1;
+    reg [ADDR_WIDTH:0] sync_stage2;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            sync_stage1 <= 0;
+            sync_stage2 <= 0;
             sync_ptr <= 0;
-        end 
-        else
-        begin
-            d <= ptr;
-            sync_ptr <= d;
+        end else begin
+            sync_stage1 <= async_ptr;
+            sync_stage2 <= sync_stage1;
+            sync_ptr <= sync_stage2;
         end
     end
-    
+
 endmodule
