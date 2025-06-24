@@ -1,23 +1,23 @@
-module Memory(
-    input [7:0] data_in,
-    output reg [7:0] data_out,
-    input wr_en, wr_clk, rd_en, rd_clk,
-    input [3:0] b_wrptr, b_rdptr,
-    input full, empty
-    );
-    
-    reg [7:0] memory [15:0];
-    
-    always@ (posedge wr_clk) begin
-        if( wr_en & !full) begin
-            memory[b_wrptr] <= data_in;
-        end
-     end
+module fifo_memory #(parameter ADDR_WIDTH = 4, parameter DATA_WIDTH = 8) (
+    input wire clk,
+    input wire wr_en,
+    input wire rd_en,
+    input wire [DATA_WIDTH-1:0] wr_data,
+    output reg [DATA_WIDTH-1:0] rd_data,
+    input wire [ADDR_WIDTH-1:0] waddr,
+    input wire [ADDR_WIDTH-1:0] raddr
+);
 
-    always@ (posedge rd_clk) begin
-        if( rd_en & !empty) begin
-            data_out <= memory[b_rdptr];
+    // Memory array declaration
+    reg [DATA_WIDTH-1:0] mem [2**ADDR_WIDTH-1:0];
+
+    always @(posedge clk) begin
+        if (wr_en) begin
+            mem[waddr] <= wr_data;  // Write data to memory
         end
-    end 
-          
+        if (rd_en) begin
+            rd_data <= mem[raddr];  // Read data from memory
+        end
+    end
+
 endmodule
