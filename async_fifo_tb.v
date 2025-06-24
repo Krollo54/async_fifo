@@ -1,94 +1,73 @@
-`include "top_module.v"
-module async_fifo_tb;
+module FIFO_tb;
 
-    parameter ADDR_WIDTH = 4;
-    parameter DATA_WIDTH = 8;
+wire [7:0] data_out;
+wire full, empty;
+reg [7:0] data_in;
+reg rd_clk, rd_en, wr_clk, wr_en, wr_rst, rd_rst;
 
-    reg wr_clk;
-    reg rd_clk;
-    reg rst;
-    reg wr_en;
-    reg rd_en;
-    reg [DATA_WIDTH-1:0] wr_data;
-    wire [DATA_WIDTH-1:0] rd_data;
-    wire full, empty;
+integer i, j;
 
-    // Instantiate the asynchronous FIFO
-    async_fifo #(
-        .ADDR_WIDTH(ADDR_WIDTH),
-        .DATA_WIDTH(DATA_WIDTH)
-    ) uut (
-        .wr_clk(wr_clk),
-        .rd_clk(rd_clk),
-        .rst(rst),
-        .wr_en(wr_en),
-        .rd_en(rd_en),
-        .wr_data(wr_data),
-        .rd_data(rd_data),
-        .full(full),
-        .empty(empty)
-    );
+Top DUT(data_in, data_out, rd_clk, wr_clk ,rd_rst, wr_rst, rd_en, wr_en, empty, full);
 
-    // Define clock periods
-    parameter WR_CLK_PERIOD = 10; // Write clock period in time units
-    parameter RD_CLK_PERIOD = 15; // Read clock period in time units
+always #8 wr_clk = ~wr_clk;
+always #25 rd_clk = ~rd_clk;
 
-    // Clock generation
-    initial begin
-        wr_clk = 0;
-        rd_clk = 0;
-        forever begin
-            #5 wr_clk = ~wr_clk; // Toggle write clock every write clock period/2 time units
-            #10;
-        end
-    end
 
-    initial begin
-        forever begin
-            #7.5 rd_clk = ~rd_clk; // Toggle read clock every read clock period/2 time units
-            #15;
-        end
-    end
-
-    // Testbench stimulus
-    initial begin
-        // VCD dumping setup
-        $dumpfile("dump.vcd");
-        $dumpvars(0, async_fifo_tb);
-
-        // Reset
-        rst = 1;
-        wr_en = 0;
-        rd_en = 0;
-        wr_data = 0;
-        #20;
-        rst = 0;
-
-        // Write and read operations for 50 time units
-        repeat (50) begin
-            // Write data to FIFO if not full
-            if (!full) begin
-                wr_en = 1;
-                wr_data = $random % 256; // Random data within 8-bit range
-                #30;
-                wr_en = 0;
-                $display("Time = %0t, Write Data = %h", $time, wr_data);
+initial begin 
+   
+    rd_clk = 1'b0; rd_rst = 1'b0; rd_en = 1'b0;
+    data_in = 0;
+    
+    repeat(1) @(posedge wr_clk);
+    wr_rst = 1'b1;
+    
+    repeat(2)begin
+    for(i=0;i<30;i=i+1) 
+    begin
+        @(posedge rd_clk)
+        begin
+            if(!empty && (i%2 !== 0))
+            begin
+                rd_en = 1'b1;
+                $display("Data out = %h", data_out);
             end
+            else
+                rd_en = 1'b0;
+        end
+    end
+    #100;
+    end
+end
 
-            // Read data from FIFO if not empty
-            if (!empty) begin
-                rd_en = 1;
-                #30;
-                rd_en = 0;
-                $display("Time = %0t, Read Data = %h", $time, rd_data);
-            end else if (rd_en) begin
-                $display("Time = %0t, Read Data = No data available (FIFO empty)", $time);
+initial begin
+
+    wr_clk = 1'b0; wr_rst = 1'b0; wr_en = 1'b0;
+    
+    repeat(1) @(posedge rd_clk);
+    rd_rst = 1'b1;
+    
+    repeat(2)begin
+    for(j=0;j<60;j=j+1) 
+    begin
+        @(posedge wr_clk)
+        begin
+            if(!full && (j%2 !== 0))
+            begin
+                wr_en = 1'b1;
+                $display("Data in = %h", data_in);
+                data_in = data_in + 3;
+            end
+            else
+            begin
+                wr_en = 1'b0;
             end
         end
-
-        // Stop simulation
-        #100;
-        $finish;
     end
+    end
+    
+    #100000;
+    $finish;
+    
+end 
 
 endmodule
