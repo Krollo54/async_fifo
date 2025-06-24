@@ -1,24 +1,18 @@
-module synchronizer #(parameter ADDR_WIDTH = 4) (
-    input wire clk,
-    input wire rst,
-    input wire [ADDR_WIDTH:0] async_ptr,
-    output reg [ADDR_WIDTH:0] sync_ptr
-);
-
-    // Two-stage synchronizer to mitigate metastability
-    reg [ADDR_WIDTH:0] sync_stage1;
-    reg [ADDR_WIDTH:0] sync_stage2;
-
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            sync_stage1 <= 0;
-            sync_stage2 <= 0;
-            sync_ptr <= 0;
-        end else begin
-            sync_stage1 <= async_ptr;
-            sync_stage2 <= sync_stage1;
-            sync_ptr <= sync_stage2;
-        end
-    end
-
+module Top(
+    input [7:0] data_in,
+    output [7:0] data_out,
+    input rd_clk, wr_clk, rd_rst, wr_rst, rd_en, wr_en,
+    output wire empty, full
+    );
+    
+    wire [4:0] b_wrptr, g_wrptr, g_wrptr_sync;
+//    wire full, empty;
+    wire [4:0] b_rdptr, g_rdptr, g_rdptr_sync;
+    
+    Memory M1 (data_in, data_out, wr_en, wr_clk, rd_en, rd_clk, b_wrptr[3:0], b_rdptr[3:0], full, empty);
+    Read_Pointer A1 (rd_clk, rd_en, rd_rst, b_rdptr, g_rdptr, g_wrptr_sync, empty);
+    Write_Pointer A2 (wr_clk, wr_en, wr_rst, b_wrptr, g_wrptr, g_rdptr_sync, full);
+    Synchroniser S1 (rd_clk, rd_rst, g_wrptr, g_wrptr_sync);
+    Synchroniser S2 (wr_clk, wr_rst, g_rdptr, g_rdptr_sync);
+    
 endmodule
