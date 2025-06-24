@@ -38,14 +38,14 @@ module async_fifo_tb;
         wr_clk = 0;
         rd_clk = 0;
         forever begin
-            #5 wr_clk = ~wr_clk; // Toggle write clock every 5 time units
+            #5 wr_clk = ~wr_clk; // Toggle write clock every write clock period/2 time units
             #10;
         end
     end
 
     initial begin
         forever begin
-            #7.5 rd_clk = ~rd_clk; // Toggle read clock every 7.5 time units
+            #7.5 rd_clk = ~rd_clk; // Toggle read clock every read clock period/2 time units
             #15;
         end
     end
